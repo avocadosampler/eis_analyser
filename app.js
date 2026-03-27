@@ -1,6 +1,6 @@
 (async function () {
     const IMAGE_SIZE = 224;
-    const LABELS = ["Normal", "High_Contact_Resistance", "Recombination_Loss", "Diffusion_Limited"];
+    const LABELS = ["Diffusion_Limited", "High_Contact_Resistance", "Normal", "Recombination_Loss"];
     const MODEL_URL = "model/model.json";
 
     // DOM refs
