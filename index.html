@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EIS Diagnostic Tool</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        header {
+            text-align: center;
+            padding: 2rem 1rem 1rem;
+        }
+        header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        header p {
+            color: #94a3b8;
+            margin-top: 0.4rem;
+            font-size: 0.95rem;
+        }
+        main {
+            width: 100%;
+            max-width: 520px;
+            padding: 1rem;
+        }
+        .drop-zone {
+            border: 2px dashed #334155;
+            border-radius: 16px;
+            padding: 2.5rem 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            background: #1e293b;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: #38bdf8;
+            background: #1e293b99;
+        }
+        .drop-zone svg {
+            width: 48px;
+            height: 48px;
+            stroke: #475569;
+            margin-bottom: 0.8rem;
+        }
+        .drop-zone p { color: #94a3b8; font-size: 0.95rem; }
+        .drop-zone .browse { color: #38bdf8; text-decoration: underline; cursor: pointer; }
+        #fileInput { display: none; }
+        .preview {
+            margin-top: 1rem;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #1e293b;
+            border: 1px solid #334155;
+        }
+        .preview img {
+            width: 100%;
+            display: block;
+        }
+        .result {
+            margin-top: 1rem;
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            border: 1px solid #334155;
+        }
+        .result-label {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.8rem;
+        }
+        .result-label.healthy { color: #4ade80; }
+        .result-label.degraded { color: #f87171; }
+        .confidence-bar-track {
+            height: 8px;
+            background: #334155;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 0.4rem;
+        }
+        .confidence-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.6s ease;
+        }
+        .confidence-text {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 0.6rem;
+        }
+        .detail-text {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-bottom: 1rem;
+        }
+        .result button {
+            background: #334155;
+            color: #e2e8f0;
+            border: none;
+            padding: 0.6rem 1.4rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+        .result button:hover { background: #475569; }
+        .loading {
+            margin-top: 1.5rem;
+            text-align: center;
+        }
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid #334155;
+            border-top-color: #38bdf8;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 0.6rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .model-status {
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+</style>
+</head>
+<body>
+    <header>
+        <h1>⚡ EIS Diagnostic Tool</h1>
+        <p>Upload a Nyquist plot to classify battery health</p>
+    </header>
+    <main>
+        <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-label="Upload EIS image for diagnosis">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+            </svg>
+            <p>Drag &amp; drop an EIS image here</p>
+            <p>or <span class="browse">browse files</span></p>
+        </div>
+        <input type="file" id="fileInput" accept="image/*">
+
+        <div id="preview" class="preview" hidden>
+            <img id="previewImg" alt="Uploaded EIS Nyquist plot">
+        </div>
+        <div id="result" class="result" hidden>
+            <div class="result-label" id="resultLabel"></div>
+            <div class="confidence-bar-track">
+                <div class="confidence-bar-fill" id="confidenceBar"></div>
+            </div>
+            <div class="confidence-text" id="confidenceText"></div>
+            <div class="detail-text" id="detailText"></div>
+            <button id="resetBtn" aria-label="Analyze another image">Analyze Another</button>
+        </div>
+        <div id="loading" class="loading" hidden>
+            <div class="spinner"></div>
+            <p>Analyzing...</p>
+        </div>
+        <div id="modelStatus" class="model-status">Loading model...</div>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>
