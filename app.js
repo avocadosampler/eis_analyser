@@ -1,6 +1,6 @@
 (async function () {
     const IMAGE_SIZE = 224;
-    const LABELS = ["Healthy", "Degraded"];
+    const LABELS = ["Normal", "High_Contact_Resistance", "Recombination_Loss", "Diffusion_Limited"];
     const MODEL_URL = "model/model.json";
 
     // DOM refs
@@ -128,85 +128,135 @@
         const predictions = await model.predict(tensor).data();
         tensor.dispose();
 
-        const healthyConf = predictions[0];
-        const degradedConf = predictions[1];
-        const isHealthy = healthyConf >= degradedConf;
-        const topConf = Math.max(healthyConf, degradedConf);
+        // Find top class and confidence
+        let topIdx = 0;
+        for (let i = 1; i < predictions.length; i++) {
+            if (predictions[i] > predictions[topIdx]) topIdx = i;
+        }
+        const topClass = LABELS[topIdx];
+        const topConf = predictions[topIdx];
         const pct = (topConf * 100).toFixed(1);
+
+        // Build sorted runner-up list for detail
+        const ranked = LABELS.map((l, i) => ({ label: l, conf: predictions[i] }))
+            .sort((a, b) => b.conf - a.conf);
 
         loading.hidden = true;
         result.hidden = false;
 
-        resultLabel.textContent = isHealthy ? "✅ Healthy" : "⚠️ Degraded";
-        resultLabel.className = "result-label " + (isHealthy ? "healthy" : "degraded");
+        const isNormal = topClass === "Normal";
+        const icons = {
+            Normal: "✅", High_Contact_Resistance: "🔌",
+            Recombination_Loss: "⚠️", Diffusion_Limited: "🌊"
+        };
+        const displayNames = {
+            Normal: "Normal", High_Contact_Resistance: "Contact Resistance",
+            Recombination_Loss: "Recombination Loss", Diffusion_Limited: "Diffusion Limited"
+        };
+
+        resultLabel.textContent = `${icons[topClass]} ${displayNames[topClass]}`;
+        resultLabel.className = "result-label " + (isNormal ? "healthy" : "degraded");
 
         confidenceBar.style.width = pct + "%";
-        confidenceBar.style.background = isHealthy ? "#4ade80" : "#f87171";
-        confidenceText.textContent = `Confidence: ${pct}%`;
+        const barColors = {
+            Normal: "#4ade80", High_Contact_Resistance: "#f87171",
+            Recombination_Loss: "#fb923c", Diffusion_Limited: "#38bdf8"
+        };
+        confidenceBar.style.background = barColors[topClass];
+        confidenceText.textContent = `Confidence: ${pct}% — Runner-up: ${displayNames[ranked[1].label]} (${(ranked[1].conf * 100).toFixed(1)}%)`;
 
-        // Diagnostic engine — map prediction to physics-based insight
-        const diagnosis = getDiagnosis(isHealthy, topConf);
-        lastDiagnosis = { ...diagnosis, pct, isHealthy };
+        // Diagnostic engine
+        const diagnosis = getDiagnosis(topClass, topConf);
+        lastDiagnosis = { ...diagnosis, pct, topClass };
         renderDiagnosis(diagnosis);
 
         // Show action buttons
         actionBtns.hidden = false;
-
-        // Set compare overlay source to the uploaded image
         compareUploaded.src = previewImg.src;
 
-        // Show thermal button for Rₛ-related diagnoses (degraded or low-conf healthy)
-        const rsRelated = diagnosis.severity === "critical" || diagnosis.severity === "warning" || diagnosis.severity === "watch";
+        // Show thermal button for Rₛ-related diagnoses
+        const rsRelated = topClass === "High_Contact_Resistance" || topClass === "Diffusion_Limited"
+            || (topClass === "Normal" && topConf < 0.8);
         thermalBtn.hidden = !rsRelated;
         thermalHint.hidden = true;
     }
 
     /**
-     * Diagnostic Engine
+     * Diagnostic Engine — 4-class
      * Maps AI classification to physics-based EIS insights.
-     * Returns { label, color, cause, action, severity }
      */
-    function getDiagnosis(isHealthy, confidence) {
-        const highConf = confidence > 0.8;
+    function getDiagnosis(topClass, confidence) {
+        const highConf = confidence > 0.7;
 
-        if (isHealthy && highConf) {
-            return {
-                label: "HEALTHY",
-                color: "#4ade80",
-                severity: "ok",
-                cause: "Low series resistance (Rₛ); high recombination resistance (R_rec). Charge transport is efficient with no signs of layer separation or internal shorts.",
-                action: "System Optimal. No intervention required."
-            };
-        }
-
-        if (isHealthy && !highConf) {
-            return {
-                label: "HEALTHY (Low Confidence)",
-                color: "#facc15",
-                severity: "watch",
-                cause: "Impedance arcs appear normal, but confidence is below threshold. Possible early-stage right-shift indicating rising series resistance (Rₛ).",
-                action: "Schedule Re-test. Monitor for wiring losses or junction box corrosion."
-            };
-        }
-
-        if (!isHealthy && highConf) {
-            return {
-                label: "DEGRADATION DETECTED",
-                color: "#f87171",
-                severity: "critical",
-                cause: "High recombination / mid-frequency arc collapse. Elevated contact resistance (Arc 1) and reduced recombination resistance (Arc 2) detected.",
-                action: "Inspect cell encapsulation. This pattern usually indicates moisture intrusion in the absorber layer. Check busbar soldering and cable connections."
-            };
-        }
-
-        // Degraded, low confidence
-        return {
-            label: "POSSIBLE DEGRADATION",
-            color: "#fb923c",
-            severity: "warning",
-            cause: "Ambiguous impedance signature. Possible global increase in series resistance (Rₛ) or early contact finger failure.",
-            action: "Wiring Loss Suspected. Inspect for corrosion in the junction box. Re-test with a cleaner image if available."
+        const diagnostics = {
+            Normal: {
+                high: {
+                    label: "NORMAL",
+                    color: "#4ade80",
+                    severity: "ok",
+                    cause: "Low series resistance (Rₛ); high recombination resistance (R_rec). Two well-defined arcs indicate efficient charge transport with no layer separation or internal shorts.",
+                    action: "System Optimal. No intervention required."
+                },
+                low: {
+                    label: "LIKELY NORMAL",
+                    color: "#facc15",
+                    severity: "watch",
+                    cause: "Impedance arcs appear normal, but confidence is below threshold. Possible early-stage parameter drift.",
+                    action: "Schedule Re-test. Monitor for emerging trends in follow-up measurements."
+                }
+            },
+            High_Contact_Resistance: {
+                high: {
+                    label: "CONTACT RESISTANCE FAULT",
+                    color: "#f87171",
+                    severity: "critical",
+                    cause: "High-frequency arc growth indicates increased contact resistance (R₁). Likely busbar soldering failure, finger breakage, or cable connector degradation.",
+                    action: "Check busbar soldering and cable connections. Inspect cell interconnect ribbons for micro-cracks. Measure contact resistance with a 4-wire probe."
+                },
+                low: {
+                    label: "POSSIBLE CONTACT ISSUE",
+                    color: "#fb923c",
+                    severity: "warning",
+                    cause: "High-frequency arc appears enlarged but classification confidence is moderate. Could indicate early-stage contact degradation or measurement artifact.",
+                    action: "Re-test with clean probe contacts. If pattern persists, inspect busbar and cable connections."
+                }
+            },
+            Recombination_Loss: {
+                high: {
+                    label: "RECOMBINATION LOSS",
+                    color: "#f87171",
+                    severity: "critical",
+                    cause: "Mid-frequency arc collapse — recombination resistance (R_rec) has dropped significantly. Indicates a leaky cell with increased internal recombination, typically from moisture ingress or UV-induced absorber degradation.",
+                    action: "Inspect cell encapsulation for delamination or browning. Check for moisture ingress at edge seals. This cell may need replacement if IV curve confirms power loss."
+                },
+                low: {
+                    label: "POSSIBLE RECOMBINATION ISSUE",
+                    color: "#fb923c",
+                    severity: "warning",
+                    cause: "Mid-frequency arc appears reduced but confidence is moderate. Could indicate early material fatigue or a borderline measurement.",
+                    action: "Re-test under controlled conditions. Compare with baseline EIS from commissioning. Monitor for progressive R_rec decline."
+                }
+            },
+            Diffusion_Limited: {
+                high: {
+                    label: "DIFFUSION LIMITATION",
+                    color: "#38bdf8",
+                    severity: "critical",
+                    cause: "Low-frequency Warburg tail detected — ion transport is diffusion-limited. Indicates electrolyte depletion, blocked pores, or mass transport bottleneck in the active layer.",
+                    action: "Check electrolyte levels and flow paths. Inspect for blocked or corroded channels. In solid-state cells, this may indicate ionic conductivity loss in the separator."
+                },
+                low: {
+                    label: "POSSIBLE DIFFUSION ISSUE",
+                    color: "#818cf8",
+                    severity: "warning",
+                    cause: "Low-frequency tail suggests diffusion limitation but confidence is moderate. Could be a temperature artifact or incomplete low-frequency sweep.",
+                    action: "Re-test at controlled temperature. Ensure frequency sweep extends below 0.1 Hz. If tail persists, investigate mass transport path."
+                }
+            }
         };
+
+        const classEntry = diagnostics[topClass];
+        return classEntry ? (highConf ? classEntry.high : classEntry.low) : diagnostics.Normal.low;
     }
 
     function renderDiagnosis(d) {
@@ -262,7 +312,12 @@
         if (lastDiagnosis) {
             // Classification
             doc.setFontSize(14);
-            doc.setTextColor(lastDiagnosis.isHealthy ? 74 : 248, lastDiagnosis.isHealthy ? 222 : 113, lastDiagnosis.isHealthy ? 128 : 113);
+            const pdfColors = {
+                Normal: [74, 222, 128], High_Contact_Resistance: [248, 113, 113],
+                Recombination_Loss: [251, 146, 60], Diffusion_Limited: [56, 189, 248]
+            };
+            const c = pdfColors[lastDiagnosis.topClass] || [148, 163, 184];
+            doc.setTextColor(c[0], c[1], c[2]);
             doc.text(lastDiagnosis.label + " — " + lastDiagnosis.pct + "% confidence", margin, y);
             y += 10;
 
