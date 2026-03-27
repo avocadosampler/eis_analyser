@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EIS Diagnostic Tool</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -139,6 +140,117 @@
             font-size: 0.8rem;
             color: #64748b;
         }
+        /* Diagnostic card styles */
+        .diag-card {
+            text-align: left;
+            border-radius: 10px;
+            padding: 1rem 1.2rem;
+            margin-top: 0.6rem;
+            border-left: 4px solid;
+        }
+        .diag-ok       { border-color: #4ade80; background: #0f2a1a; }
+        .diag-watch    { border-color: #facc15; background: #2a2510; }
+        .diag-warning  { border-color: #fb923c; background: #2a1a0f; }
+        .diag-critical { border-color: #f87171; background: #2a0f0f; }
+        .diag-section { margin-bottom: 0.7rem; }
+        .diag-section:last-child { margin-bottom: 0; }
+        .diag-tag {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+            margin-bottom: 0.25rem;
+        }
+        .diag-section p {
+            font-size: 0.88rem;
+            color: #cbd5e1;
+            line-height: 1.45;
+        }
+        /* Compare slider */
+        .compare-section {
+            margin-top: 1rem;
+            text-align: left;
+        }
+        .compare-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.78rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #94a3b8;
+            margin-bottom: 0.4rem;
+        }
+        .compare-val { color: #38bdf8; }
+        .compare-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #0f172a;
+            border: 1px solid #334155;
+        }
+        .compare-layer {
+            position: absolute;
+            inset: 0;
+        }
+        .compare-layer img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .compare-ref {
+            opacity: 0.5;
+            mix-blend-mode: screen;
+        }
+        .compare-section input[type="range"] {
+            width: 100%;
+            margin-top: 0.5rem;
+            accent-color: #38bdf8;
+        }
+        /* Action buttons row */
+        .action-btns {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .action-btns button {
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            padding: 0.55rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .action-btns button:hover {
+            background: #334155;
+            border-color: #475569;
+        }
+        .action-btns button.active {
+            border-color: #38bdf8;
+            background: #1e3a5f;
+        }
+        /* Thermal hint */
+        .thermal-hint {
+            margin-top: 0.8rem;
+            background: #2a1a0f;
+            border: 1px solid #fb923c;
+            border-radius: 10px;
+            padding: 0.8rem 1rem;
+            text-align: left;
+        }
+        .thermal-hint p {
+            font-size: 0.85rem;
+            color: #fed7aa;
+            line-height: 1.45;
+        }
 </style>
 </head>
 <body>
@@ -166,6 +278,36 @@
             </div>
             <div class="confidence-text" id="confidenceText"></div>
             <div class="detail-text" id="detailText"></div>
+
+            <!-- Compare slider: overlay reference healthy plot -->
+            <div id="compareSection" class="compare-section" hidden>
+                <label class="compare-label" for="compareSlider">
+                    Reference Overlay
+                    <span id="compareVal" class="compare-val">50%</span>
+                </label>
+                <div class="compare-container">
+                    <div class="compare-layer">
+                        <img id="compareUploaded" alt="Uploaded plot">
+                    </div>
+                    <div class="compare-layer compare-ref" id="compareRefLayer">
+                        <img src="eis_dataset/healthy/h_0.png" alt="Reference healthy Nyquist plot">
+                    </div>
+                </div>
+                <input type="range" id="compareSlider" min="0" max="100" value="50" aria-label="Adjust reference overlay opacity">
+            </div>
+
+            <!-- Thermal + PDF action buttons -->
+            <div id="actionBtns" class="action-btns" hidden>
+                <button id="compareToggle" aria-label="Toggle reference comparison overlay">🔍 Compare</button>
+                <button id="thermalBtn" hidden aria-label="Thermal hotspot advisory">🌡️ Check Hotspots</button>
+                <button id="pdfBtn" aria-label="Download diagnostic report as PDF">📄 PDF Report</button>
+            </div>
+
+            <!-- Thermal advisory -->
+            <div id="thermalHint" class="thermal-hint" hidden>
+                <p>🌡️ Rₛ anomaly detected — use a thermal camera attachment to scan for localized hotspots on the cell surface and junction box.</p>
+            </div>
+
             <button id="resetBtn" aria-label="Analyze another image">Analyze Another</button>
         </div>
         <div id="loading" class="loading" hidden>
