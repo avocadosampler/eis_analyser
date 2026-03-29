@@ -28,6 +28,16 @@
     const thermalBtn = document.getElementById("thermalBtn");
     const thermalHint = document.getElementById("thermalHint");
     const pdfBtn = document.getElementById("pdfBtn");
+    const csvCanvas = document.getElementById("csvCanvas");
+    const csvHint = document.getElementById("csvHint");
+    const cameraBtn = document.getElementById("cameraBtn");
+    const cameraView = document.getElementById("cameraView");
+    const cameraFeed = document.getElementById("cameraFeed");
+    const captureBtn = document.getElementById("captureBtn");
+    const cancelCameraBtn = document.getElementById("cancelCameraBtn");
+    const captureCanvas = document.getElementById("captureCanvas");
+
+    let cameraStream = null;
 
     // Load model
     let model;
@@ -54,10 +64,21 @@
         e.preventDefault();
         dropZone.classList.remove("dragover");
         const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith("image/")) handleFile(file);
+        if (!file) return;
+        if (file.name.toLowerCase().endsWith(".csv")) {
+            handleCSV(file);
+        } else if (file.type.startsWith("image/")) {
+            handleFile(file);
+        }
     });
     fileInput.addEventListener("change", () => {
-        if (fileInput.files[0]) handleFile(fileInput.files[0]);
+        const file = fileInput.files[0];
+        if (!file) return;
+        if (file.name.toLowerCase().endsWith(".csv")) {
+            handleCSV(file);
+        } else {
+            handleFile(file);
+        }
     });
     resetBtn.addEventListener("click", reset);
 
@@ -84,6 +105,11 @@
     // PDF report generation
     pdfBtn.addEventListener("click", generatePDF);
 
+    // Camera
+    cameraBtn.addEventListener("click", startCamera);
+    captureBtn.addEventListener("click", capturePhoto);
+    cancelCameraBtn.addEventListener("click", stopCamera);
+
     // Track last diagnosis for PDF
     let lastDiagnosis = null;
 
@@ -94,11 +120,13 @@
         actionBtns.hidden = true;
         thermalHint.hidden = true;
         thermalBtn.hidden = true;
+        csvHint.hidden = true;
         compareToggle.classList.remove("active");
         thermalBtn.classList.remove("active");
         dropZone.style.display = "";
         fileInput.value = "";
         lastDiagnosis = null;
+        stopCamera();
     }
 
     function handleFile(file) {
@@ -110,6 +138,184 @@
         reader.readAsDataURL(file);
 
         dropZone.style.display = "none";
+        preview.hidden = false;
+        result.hidden = true;
+        loading.hidden = false;
+    }
+
+    // ----- CSV support -----
+
+    function handleCSV(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = parseCSV(e.target.result);
+                renderNyquistToCanvas(data.real, data.imag);
+                // Use the canvas as the preview image
+                previewImg.src = csvCanvas.toDataURL("image/png");
+                previewImg.onload = () => {
+                    csvHint.hidden = false;
+                    classify(previewImg);
+                };
+            } catch (err) {
+                loading.hidden = true;
+                modelStatus.textContent = "CSV error: " + err.message;
+                console.error(err);
+            }
+        };
+        reader.readAsText(file);
+
+        dropZone.style.display = "none";
+        preview.hidden = false;
+        result.hidden = true;
+        loading.hidden = false;
+    }
+
+    /**
+     * Parse CSV with flexible column detection.
+     * Accepts common EIS formats:
+     *   - Columns named: Z', Z'', Zreal, Zimag, Re(Z), Im(Z), real, imag, etc.
+     *   - Or just 2-3 numeric columns (freq, real, imag) or (real, imag)
+     * Returns { real: Float64Array, imag: Float64Array } where imag is raw (negative).
+     */
+    function parseCSV(text) {
+        const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 3) throw new Error("CSV too short — need a header + at least 2 data rows.");
+
+        // Detect delimiter
+        const delim = lines[0].includes("\t") ? "\t" : ",";
+        const header = lines[0].split(delim).map(h => h.trim().toLowerCase().replace(/['"()]/g, ""));
+        const rows = lines.slice(1).map(l => l.split(delim).map(v => parseFloat(v.trim())));
+
+        // Find real and imaginary columns by name
+        const realAliases = ["z'", "zreal", "z_real", "rez", "re z", "rez", "real", "z_re", "re"];
+        const imagAliases = ["z''", "z\"", "zimag", "z_imag", "imz", "im z", "imz", "imag", "z_im", "im", "-z''", "-zimag"];
+
+        let rIdx = header.findIndex(h => realAliases.includes(h));
+        let iIdx = header.findIndex(h => imagAliases.includes(h));
+        let negateImag = false;
+
+        // Check if the header indicates already-negated imaginary
+        if (iIdx >= 0 && header[iIdx].startsWith("-")) {
+            negateImag = true; // data is already -Z'', keep as positive for plotting
+        }
+
+        // Fallback: if no named columns, assume positional
+        if (rIdx < 0 || iIdx < 0) {
+            if (header.length >= 3) {
+                // Assume: freq, real, imag
+                rIdx = 1;
+                iIdx = 2;
+            } else if (header.length === 2) {
+                // Assume: real, imag
+                rIdx = 0;
+                iIdx = 1;
+            } else {
+                throw new Error("Cannot detect Z' and Z'' columns. Use headers: Z', Z''");
+            }
+        }
+
+        const real = new Float64Array(rows.length);
+        const imag = new Float64Array(rows.length);
+        let validCount = 0;
+
+        for (const row of rows) {
+            const r = row[rIdx];
+            const im = row[iIdx];
+            if (isNaN(r) || isNaN(im)) continue;
+            real[validCount] = r;
+            imag[validCount] = negateImag ? im : -im; // store as -Z'' (positive for Nyquist)
+            validCount++;
+        }
+
+        if (validCount < 2) throw new Error("Not enough valid data points in CSV.");
+
+        return {
+            real: real.subarray(0, validCount),
+            imag: imag.subarray(0, validCount)
+        };
+    }
+
+    /**
+     * Render Nyquist plot to hidden canvas — matches training data style.
+     * Black line on white background, no axes, tight crop.
+     */
+    function renderNyquistToCanvas(real, imag) {
+        const size = 400;
+        csvCanvas.width = size;
+        csvCanvas.height = size;
+        const ctx = csvCanvas.getContext("2d");
+
+        // White background
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, size, size);
+
+        // Compute bounds with padding
+        let rMin = Infinity, rMax = -Infinity, iMin = Infinity, iMax = -Infinity;
+        for (let i = 0; i < real.length; i++) {
+            if (real[i] < rMin) rMin = real[i];
+            if (real[i] > rMax) rMax = real[i];
+            if (imag[i] < iMin) iMin = imag[i];
+            if (imag[i] > iMax) iMax = imag[i];
+        }
+
+        const rRange = rMax - rMin || 1;
+        const iRange = iMax - iMin || 1;
+        const pad = 0.08;
+        const padR = rRange * pad;
+        const padI = iRange * pad;
+
+        function toX(r) { return ((r - rMin + padR) / (rRange + 2 * padR)) * size; }
+        function toY(i) { return size - ((i - iMin + padI) / (iRange + 2 * padI)) * size; }
+
+        // Draw line
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(toX(real[0]), toY(imag[0]));
+        for (let i = 1; i < real.length; i++) {
+            ctx.lineTo(toX(real[i]), toY(imag[i]));
+        }
+        ctx.stroke();
+    }
+
+    // ----- Camera support -----
+
+    async function startCamera() {
+        try {
+            // Prefer rear camera on mobile
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" }
+            });
+            cameraFeed.srcObject = cameraStream;
+            dropZone.style.display = "none";
+            cameraView.hidden = false;
+        } catch (err) {
+            modelStatus.textContent = "Camera access denied or unavailable.";
+            console.error(err);
+        }
+    }
+
+    function stopCamera() {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(t => t.stop());
+            cameraStream = null;
+        }
+        cameraFeed.srcObject = null;
+        cameraView.hidden = true;
+    }
+
+    function capturePhoto() {
+        // Draw current video frame to canvas
+        captureCanvas.width = cameraFeed.videoWidth;
+        captureCanvas.height = cameraFeed.videoHeight;
+        const ctx = captureCanvas.getContext("2d");
+        ctx.drawImage(cameraFeed, 0, 0);
+
+        // Stop camera, show preview, classify
+        stopCamera();
+        previewImg.src = captureCanvas.toDataURL("image/png");
+        previewImg.onload = () => classify(previewImg);
         preview.hidden = false;
         result.hidden = true;
         loading.hidden = false;

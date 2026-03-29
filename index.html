@@ -252,6 +252,80 @@
             color: #fed7aa;
             line-height: 1.45;
         }
+        .csv-hint {
+            margin-top: 0.6rem;
+            text-align: center;
+            padding: 0.5rem;
+            background: #1a2332;
+            border: 1px solid #334155;
+            border-radius: 8px;
+        }
+        .csv-hint p {
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+        /* Camera button in drop zone */
+        .camera-btn {
+            background: #1e293b;
+            color: #38bdf8;
+            border: 1px solid #334155;
+            padding: 0.5rem 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .camera-btn:hover {
+            background: #334155;
+            border-color: #38bdf8;
+        }
+        /* Camera viewfinder */
+        .camera-view {
+            margin-top: 1rem;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            border: 1px solid #334155;
+            position: relative;
+        }
+        .camera-view video {
+            width: 100%;
+            display: block;
+        }
+        .camera-controls {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            padding: 0.8rem;
+            background: rgba(15, 23, 42, 0.85);
+        }
+        .capture-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: 3px solid #e2e8f0;
+            background: transparent;
+            color: #e2e8f0;
+            font-size: 1.6rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .capture-btn:hover { background: rgba(255,255,255,0.1); }
+        .cancel-camera-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 1px solid #475569;
+            background: #334155;
+            color: #e2e8f0;
+            font-size: 1rem;
+            cursor: pointer;
+            align-self: center;
+        }
+        .cancel-camera-btn:hover { background: #475569; }
 </style>
 </head>
 <body>
@@ -264,10 +338,25 @@
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
             </svg>
-            <p>Drag &amp; drop an EIS image here</p>
+            <p>Drag &amp; drop an EIS image or CSV here</p>
             <p>or <span class="browse">browse files</span></p>
+            <p style="margin-top: 0.6rem;"><button id="cameraBtn" class="camera-btn" aria-label="Use device camera to capture EIS plot">📷 Use Camera</button></p>
         </div>
-        <input type="file" id="fileInput" accept="image/*">
+        <input type="file" id="fileInput" accept="image/*,.csv">
+        <canvas id="csvCanvas" width="400" height="400" hidden></canvas>
+        <div id="csvHint" class="csv-hint" hidden>
+            <p>CSV parsed successfully — Nyquist plot rendered from impedance data.</p>
+        </div>
+
+        <!-- Camera viewfinder -->
+        <div id="cameraView" class="camera-view" hidden>
+            <video id="cameraFeed" autoplay playsinline></video>
+            <div class="camera-controls">
+                <button id="captureBtn" class="capture-btn" aria-label="Capture photo">⏺</button>
+                <button id="cancelCameraBtn" class="cancel-camera-btn" aria-label="Cancel camera">✕</button>
+            </div>
+        </div>
+        <canvas id="captureCanvas" hidden></canvas>
 
         <div id="preview" class="preview" hidden>
             <img id="previewImg" alt="Uploaded EIS Nyquist plot">
