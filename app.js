@@ -121,7 +121,6 @@
                 .fromPixels(imgEl)
                 .resizeBilinear([IMAGE_SIZE, IMAGE_SIZE])
                 .toFloat()
-                .div(255.0)
                 .expandDims(0);
         });
 
@@ -242,8 +241,8 @@
                     label: "DIFFUSION LIMITATION",
                     color: "#38bdf8",
                     severity: "critical",
-                    cause: "Low-frequency Warburg tail detected — ion transport is diffusion-limited. Indicates electrolyte depletion, blocked pores, or mass transport bottleneck in the active layer.",
-                    action: "Check electrolyte levels and flow paths. Inspect for blocked or corroded channels. In solid-state cells, this may indicate ionic conductivity loss in the separator."
+                    cause: "Low-frequency Warburg tail detected — charge carrier transport is diffusion-limited. Indicates degraded ion mobility in the active layer, possibly from absorber decomposition or blocked charge extraction pathways.",
+                    action: "Inspect active layer for discoloration or delamination. Check hole/electron transport layers for degradation. This pattern often correlates with prolonged thermal or UV stress."
                 },
                 low: {
                     label: "POSSIBLE DIFFUSION ISSUE",
