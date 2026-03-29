@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EIS Diagnostic Tool</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -380,7 +380,7 @@
                         <img id="compareUploaded" alt="Uploaded plot">
                     </div>
                     <div class="compare-layer compare-ref" id="compareRefLayer">
-                        <img src="eis_dataset/healthy/h_0.png" alt="Reference healthy Nyquist plot">
+                        <img src="eis_dataset/normal/normal_0.png" alt="Reference healthy Nyquist plot">
                     </div>
                 </div>
                 <input type="range" id="compareSlider" min="0" max="100" value="50" aria-label="Adjust reference overlay opacity">

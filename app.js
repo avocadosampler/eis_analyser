@@ -45,13 +45,17 @@
         model = await tf.loadLayersModel(MODEL_URL);
         modelStatus.textContent = "Model loaded — ready to diagnose";
     } catch (e) {
+        console.error("Model load failed:", e.message || e);
+        console.error("Stack:", e.stack);
         modelStatus.textContent = "Failed to load model. Check the model/ folder.";
-        console.error(e);
         return;
     }
 
     // Drag & drop
-    dropZone.addEventListener("click", () => fileInput.click());
+    dropZone.addEventListener("click", (e) => {
+        if (e.target.closest("#cameraBtn")) return;
+        fileInput.click();
+    });
     dropZone.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") fileInput.click();
     });
@@ -106,7 +110,10 @@
     pdfBtn.addEventListener("click", generatePDF);
 
     // Camera
-    cameraBtn.addEventListener("click", startCamera);
+    cameraBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        startCamera();
+    });
     captureBtn.addEventListener("click", capturePhoto);
     cancelCameraBtn.addEventListener("click", stopCamera);
 
@@ -303,6 +310,7 @@
         }
         cameraFeed.srcObject = null;
         cameraView.hidden = true;
+        dropZone.style.display = "";
     }
 
     function capturePhoto() {
